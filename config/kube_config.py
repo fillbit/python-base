@@ -18,6 +18,7 @@ import datetime
 import json
 import os
 import tempfile
+import subprocess
 
 import google.auth
 import google.auth.transport.requests
@@ -174,7 +175,8 @@ class KubeConfigLoader(object):
             2. token_data
             3. token field (point to a token file)
             4. oidc auth-provider
-            5. username/password
+            5. exec auth-provider
+            6. username/password
         """
         if not self._user:
             return
@@ -184,7 +186,39 @@ class KubeConfigLoader(object):
             return
         if self._load_oid_token():
             return
+        if self._load_exec_token():
+            return
         self._load_user_pass_token()
+
+    def _load_exec_token(self):
+        if 'exec' not in self._user:
+            return
+        provider = self._user['exec']
+        if 'command' not in provider:
+            return
+        if 'apiVersion' not in provider:
+            return
+
+        env = dict(os.environ)
+        if provider.safe_get('env'):
+            for p in provider['env']:
+                env[p['name']] = p['value']
+        cmd = [provider['command']]
+        if provider.safe_get('args') and len(provider['args']) > 0:
+            cmd.extend(provider['args'])
+        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
+        (stdout, stderr) = proc.communicate()
+        if proc.returncode != 0:
+            return
+
+        response = json.loads(stdout)
+        if response['apiVersion'] != provider['apiVersion']:
+            return
+
+        self.token = "Bearer %s" % response['status']['token']
+        return self.token
+
 
     def _load_gcp_token(self):
         if 'auth-provider' not in self._user:

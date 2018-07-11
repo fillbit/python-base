@@ -346,6 +346,13 @@ class TestKubeConfigLoader(BaseTestCase):
                 }
             },
             {
+                "name": "exec",
+                "context": {
+                    "cluster": "default",
+                    "user": "exec"
+                }
+            },
+            {
                 "name": "gcp",
                 "context": {
                     "cluster": "default",
@@ -463,6 +470,22 @@ class TestKubeConfigLoader(BaseTestCase):
                 }
             },
             {
+                "name": "exec",
+                "user": {
+                    "exec": {
+                        "apiVersion": "client.authentication.k8s.io/v1beta1",
+                        "args": [ "arg1", "arg2" ],
+                        "command": "example-client-go-exec-plugin",
+                        "env": [
+                            {
+                                "name":"foo",
+                                "value":"bar"
+                            }
+                        ]
+                    }
+                }
+            },
+            {
                 "name": "gcp",
                 "user": {
                     "auth-provider": {
@@ -576,6 +599,27 @@ class TestKubeConfigLoader(BaseTestCase):
             active_context="simple_token")
         self.assertTrue(loader._load_user_token())
         self.assertEqual(BEARER_TOKEN_FORMAT % TEST_DATA_BASE64, loader.token)
+
+    @mock.patch('kubernetes.config.kube_config.subprocess.Popen')
+    def test_load_exec_token(self, mock_subprocess_Popen):
+        CLIENT_GO_RESPONSE = {
+                        "apiVersion": "client.authentication.k8s.io/v1beta1",
+                        "kind": "ExecCredential",
+                        "status": {
+                            "token": TEST_DATA_BASE64
+                        }
+                    }
+        mock_process = mock.MagicMock()
+        mock_process.communicate = mock.Mock(return_value=(
+                json.dumps(CLIENT_GO_RESPONSE), ''))
+        mock_process.returncode = 0
+        mock_subprocess_Popen.return_value = mock_process
+        loader = KubeConfigLoader(
+                config_dict=self.TEST_KUBE_CONFIG,
+                active_context="exec")
+        self.assertTrue(loader._load_exec_token())
+        self.assertEqual(BEARER_TOKEN_FORMAT % TEST_DATA_BASE64,
+                         loader.token)
 
     def test_gcp_no_refresh(self):
         expected = FakeConfig(
